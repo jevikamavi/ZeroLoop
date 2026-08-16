@@ -9,6 +9,67 @@ import {
 
 const SEARCH_RADIUS = 20000; // 20 km
 
+// Reliable fallback locations around Delhi.
+// These are used only if the live OpenStreetMap search fails.
+const FALLBACK_PLACES = [
+  {
+    id: 'deer-park',
+    lat: 28.5456,
+    lng: 77.1955,
+    name: 'Deer Park, Hauz Khas',
+    type: 'park'
+  },
+  {
+    id: 'hauz-khas-district-park',
+    lat: 28.5505,
+    lng: 77.2012,
+    name: 'Hauz Khas District Park',
+    type: 'park'
+  },
+  {
+    id: 'garden-five-senses',
+    lat: 28.5132,
+    lng: 77.2025,
+    name: 'Garden of Five Senses',
+    type: 'garden'
+  },
+  {
+    id: 'nehru-park',
+    lat: 28.5968,
+    lng: 77.1898,
+    name: 'Nehru Park',
+    type: 'park'
+  },
+  {
+    id: 'lodhi-garden',
+    lat: 28.5933,
+    lng: 77.2197,
+    name: 'Lodhi Garden',
+    type: 'garden'
+  },
+  {
+    id: 'sanjay-van',
+    lat: 28.5305,
+    lng: 77.1532,
+    name: 'Sanjay Van',
+    type: 'nature reserve'
+  },
+  {
+    id: 'jahanpanah-city-forest',
+    lat: 28.5158,
+    lng: 77.2308,
+    name: 'Jahanpanah City Forest',
+    type: 'park'
+  },
+  {
+    id: 'buddha-jayanti-park',
+    lat: 28.6117,
+    lng: 77.1788,
+    name: 'Buddha Jayanti Park',
+    type: 'park'
+  }
+];
+
 function RecenterMap({ coords }) {
   const map = useMap();
 
@@ -24,17 +85,41 @@ function RecenterMap({ coords }) {
   return null;
 }
 
+// Calculate distance between two coordinates in metres.
+function distanceInMetres(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+
+  return (
+    R *
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    )
+  );
+}
+
 export default function GreenSpaceMap({ coords }) {
   const [places, setPlaces] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [usingFallback, setUsingFallback] =
+    useState(false);
 
   useEffect(() => {
     if (!coords) return;
 
     async function findGreenSpaces() {
       setLoading(true);
-      setError(null);
+      setUsingFallback(false);
 
       const query = `
         [out:json][timeout:25];
@@ -70,13 +155,14 @@ export default function GreenSpaceMap({ coords }) {
             headers: {
               'Content-Type': 'text/plain'
             },
-            body: query
+            body: query,
+            signal: AbortSignal.timeout(12000)
           }
         );
 
         if (!response.ok) {
           throw new Error(
-            `Unable to find nearby green spaces. (${response.status})`
+            `Overpass returned ${response.status}`
           );
         }
 
@@ -116,16 +202,34 @@ export default function GreenSpaceMap({ coords }) {
           })
           .filter(Boolean);
 
+        if (greenSpaces.length === 0) {
+          throw new Error(
+            'No green spaces returned'
+          );
+        }
+
         setPlaces(greenSpaces);
       } catch (err) {
-        console.error(
-          'Green space search failed:',
-          err
+        console.warn(
+          'Live green-space search failed. Using fallback locations.'
         );
 
-        setError(
-          'Could not load nearby green spaces.'
-        );
+        // Only show fallback places that are within
+        // 20 km of the user's actual location.
+        const nearbyFallbacks =
+          FALLBACK_PLACES.filter((place) => {
+            return (
+              distanceInMetres(
+                coords.lat,
+                coords.lng,
+                place.lat,
+                place.lng
+              ) <= SEARCH_RADIUS
+            );
+          });
+
+        setPlaces(nearbyFallbacks);
+        setUsingFallback(true);
       } finally {
         setLoading(false);
       }
@@ -174,7 +278,9 @@ export default function GreenSpaceMap({ coords }) {
           }}
         >
           <Popup>
-            <strong>You are here</strong>
+            <strong>
+              You are here
+            </strong>
           </Popup>
         </CircleMarker>
 
@@ -198,7 +304,7 @@ export default function GreenSpaceMap({ coords }) {
                 {place.name}
               </strong>
               <br />
-              {place.type.replace('_', ' ')}
+              {place.type}
             </Popup>
           </CircleMarker>
         ))}
@@ -221,7 +327,7 @@ export default function GreenSpaceMap({ coords }) {
         </div>
       )}
 
-      {error && (
+      {usingFallback && !loading && (
         <div
           style={{
             position: 'absolute',
@@ -231,10 +337,10 @@ export default function GreenSpaceMap({ coords }) {
             background: 'white',
             padding: '8px 12px',
             borderRadius: 8,
-            fontSize: 13
+            fontSize: 12
           }}
         >
-          {error}
+          🌳 Showing nearby Delhi green spaces
         </div>
       )}
     </div>
