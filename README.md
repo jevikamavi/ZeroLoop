@@ -1,3 +1,8 @@
+The website is deployed on vercel, it is accessible using this link:
+https://zeroloop-kohl.vercel.app/
+
+
+
 # ZeroLoop
 
 ZeroLoop is a sustainable waste management and green-services web application designed to help users manage waste responsibly and access useful environmental services in one place.
