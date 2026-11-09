@@ -20,14 +20,52 @@ function formatPickupDate(date) {
   });
 }
 
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+// Whole days from today back to the most recent collection day, and forward to
+// the next one, for a list of weekday names like ['Mon', 'Wed'].
+function scheduleGaps(days) {
+  const idx = (days || []).map((d) => DAY_NAMES.indexOf(d)).filter((i) => i >= 0);
+  if (idx.length === 0) return null;
+  const today = new Date().getDay();
+  let since = 7;
+  let until = 7;
+  idx.forEach((i) => {
+    const back = (today - i + 7) % 7;
+    const fwd = (i - today + 7) % 7;
+    since = Math.min(since, back);
+    until = Math.min(until, fwd === 0 ? 7 : fwd);
+  });
+  return { since, until, interval: 7 / idx.length };
+}
+
+// Estimated bin fill: share of the collection interval that has passed since
+// the last scheduled collection (there is no bin sensor in the app).
+function estimateFill(days) {
+  const g = scheduleGaps(days);
+  if (!g) return null;
+  return Math.max(5, Math.min(100, Math.round((g.since / g.interval) * 100)));
+}
+
+function nextCollectionDate(days) {
+  const g = scheduleGaps(days);
+  if (!g) return null;
+  const d = new Date();
+  d.setDate(d.getDate() + g.until);
+  return d;
+}
+
 export default function Dashboard() {
   const { account } = useApp();
 
-  const [bins] = useState({
-    trash: 62,
-    recycle: 38,
-    compost: 81
-  });
+  const [recurring, setRecurring] = useState({});
 
   const [activity, setActivity] = useState(null);
   const [upcomingPickups, setUpcomingPickups] = useState([]);
@@ -44,6 +82,12 @@ export default function Dashboard() {
 
     api.getUpcomingPickups().then((data) => {
       setUpcomingPickups(data || []);
+    });
+
+    api.getRecurringSchedule().then((rows) => {
+      const map = {};
+      (rows || []).forEach((r) => { map[r.wasteType] = r.days; });
+      setRecurring(map);
     });
   }, []);
 
@@ -65,7 +109,7 @@ export default function Dashboard() {
         <span className="eyebrow">Today</span>
 
         <h1>
-          Good afternoon, {firstName}
+          {greeting()}, {firstName}
         </h1>
 
         <p className="view-sub">
@@ -234,7 +278,7 @@ export default function Dashboard() {
               </h3>
 
               <span className="gauge-pct">
-                {bins[g.key]}%
+                {estimateFill(recurring[g.key]) ?? '—'}{estimateFill(recurring[g.key]) !== null && '%'}
               </span>
 
             </div>
@@ -245,7 +289,7 @@ export default function Dashboard() {
               <div
                 className="gauge-fill"
                 style={{
-                  width: `${bins[g.key]}%`,
+                  width: `${estimateFill(recurring[g.key]) ?? 0}%`,
                   background: g.color
                 }}
               />
@@ -265,9 +309,9 @@ export default function Dashboard() {
               >
 
                 <span>
-                  Filling up — {upcomingPickups[1]
-                    ? formatPickupDate(upcomingPickups[1].date)
-                    : 'No upcoming pickup'}
+                  Next collection — {nextCollectionDate(recurring[g.key])
+                    ? formatPickupDate(nextCollectionDate(recurring[g.key]))
+                    : 'Not scheduled'}
                 </span>
 
                 <Link
@@ -282,9 +326,9 @@ export default function Dashboard() {
             ) : (
 
               <div className="row-sub">
-                Next collection — {upcomingPickups[0]
-                  ? formatPickupDate(upcomingPickups[0].date)
-                  : 'No upcoming pickup'}
+                Next collection — {nextCollectionDate(recurring[g.key])
+                  ? formatPickupDate(nextCollectionDate(recurring[g.key]))
+                  : 'Not scheduled'}
               </div>
 
             )}

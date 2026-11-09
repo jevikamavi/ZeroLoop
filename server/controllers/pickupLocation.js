@@ -7,7 +7,14 @@ const genTicketId = (suffix = 'X') =>
 // GET /api/pickups/upcoming
 exports.getUpcoming = async (req, res) => {
   try {
-    const pickups = await Pickup.find({ userId: req.userId, status: { $ne: 'completed' } }).sort({ date: 1 });
+    // only pickups from today onwards: past bookings must not show up as "next pickup"
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const pickups = await Pickup.find({
+      userId: req.userId,
+      status: 'scheduled',
+      date: { $gte: startOfToday }
+    }).sort({ date: 1 });
     res.json(pickups);
   } catch (err) {
     res.status(500).json({ message: err.message });
